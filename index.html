@@ -318,7 +318,7 @@
 
     .dashboard {
       display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+      grid-template-columns: minmax(0, 1fr);
       gap: 1rem;
       align-items: start;
     }
@@ -602,6 +602,20 @@
       color: #ffe8ac;
     }
 
+    .over-divider {
+      display: inline-grid;
+      place-items: center;
+      min-width: 44px;
+      min-height: 32px;
+      padding: 0.3rem 0.4rem;
+      border-radius: var(--radius);
+      border: 1px dashed var(--line-strong);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
     :root[data-theme="light"] .ball-token {
       background: #ffffff;
       border-color: #8da29a;
@@ -619,6 +633,11 @@
       background: #fff0c2;
       border-color: #d49410;
       color: #654200;
+    }
+
+    :root[data-theme="light"] .over-divider {
+      background: #f5f8f6;
+      color: #415148;
     }
 
     .empty-log {
@@ -682,7 +701,7 @@
     }
 
     .main-log-panel {
-      order: 5;
+      order: 2;
     }
 
     .winner {
@@ -756,15 +775,15 @@
 
       .panel-pad,
       .score-hero {
-        padding: 0.45rem;
+        padding: 0.36rem;
       }
 
       .screen {
-        gap: 0.55rem;
+        gap: 0.42rem;
       }
 
       .score {
-        font-size: 2.45rem;
+        font-size: 2.25rem;
       }
 
       .stat-grid {
@@ -773,16 +792,16 @@
       }
 
       .stat {
-        min-height: 38px;
-        padding: 0.25rem 0.3rem;
+        min-height: 34px;
+        padding: 0.2rem 0.26rem;
       }
 
       .stat span {
-        font-size: 0.58rem;
+        font-size: 0.54rem;
       }
 
       .stat strong {
-        font-size: 0.8rem;
+        font-size: 0.76rem;
       }
 
       .players-grid,
@@ -801,8 +820,8 @@
 
       .scoring-options input,
       .scoring-options select {
-        min-height: 34px;
-        padding: 0.35rem 0.45rem;
+        min-height: 31px;
+        padding: 0.28rem 0.4rem;
       }
 
       .button-grid {
@@ -811,9 +830,9 @@
       }
 
       .run-button {
-        min-height: 34px;
+        min-height: 31px;
         padding: 0.22rem 0.2rem;
-        font-size: 0.86rem;
+        font-size: 0.82rem;
       }
 
       .score-actions {
@@ -823,9 +842,9 @@
       }
 
       .score-actions > button {
-        min-height: 32px;
+        min-height: 30px;
         padding: 0.25rem 0.24rem;
-        font-size: 0.64rem;
+        font-size: 0.62rem;
         white-space: nowrap;
         line-height: 1.05;
       }
@@ -861,18 +880,25 @@
       }
 
       .log-list {
-        max-height: 56px;
-        padding: 0.45rem;
+        max-height: 48px;
+        padding: 0.35rem;
       }
 
       .ball-token {
-        min-width: 35px;
-        min-height: 32px;
-        padding: 0.35rem 0.45rem;
+        min-width: 32px;
+        min-height: 29px;
+        padding: 0.28rem 0.38rem;
+      }
+
+      .over-divider {
+        min-width: 39px;
+        min-height: 29px;
+        padding: 0.24rem 0.34rem;
+        font-size: 0.66rem;
       }
 
       .score-controls-panel {
-        order: 2;
+        order: 3;
       }
 
       .batter-panel {
@@ -880,12 +906,12 @@
       }
 
       .bowler-panel {
-        order: 3;
+        order: 4;
       }
 
       .score-pad h2,
       .panel h2 {
-        font-size: 0.95rem;
+        font-size: 0.9rem;
       }
 
       .players-grid {
@@ -893,17 +919,17 @@
       }
 
       .player-name {
-        font-size: 0.88rem;
+        font-size: 0.84rem;
       }
 
       .player-tile p,
       .bowler-tile p {
-        font-size: 0.78rem;
+        font-size: 0.74rem;
       }
 
       .player-tile,
       .bowler-tile {
-        padding: 0.48rem;
+        padding: 0.38rem;
       }
 
       .bottom-actions {
@@ -1041,6 +1067,11 @@ Adam Hayes</textarea>
               <div class="players-grid" id="battersPanel"></div>
             </section>
 
+            <section class="panel panel-pad screen main-log-panel">
+              <h2>Ball-by-Ball Log</h2>
+              <div id="ballLog" class="log-list" aria-label="Ball by ball log"></div>
+            </section>
+
             <section class="panel panel-pad screen bowler-panel">
               <div class="score-line">
                 <h2>Bowler</h2>
@@ -1081,13 +1112,6 @@ Adam Hayes</textarea>
             </section>
 
           </div>
-
-          <aside class="screen">
-            <section class="panel panel-pad screen main-log-panel">
-              <h2>Ball-by-Ball Log</h2>
-              <div id="ballLog" class="log-list" aria-label="Ball by ball log"></div>
-            </section>
-          </aside>
         </div>
       </section>
     </main>
@@ -2105,16 +2129,23 @@ Adam Hayes</textarea>
         els.ballLog.innerHTML = `<div class="empty-log">No balls recorded</div>`;
         return;
       }
-      els.ballLog.innerHTML = sim.timeline.map((event) => {
+      const parts = [];
+      sim.timeline.forEach((event) => {
         if (event.kind === "swap") {
-          return `<span class="ball-token manual" title="Manual strike swap">swap</span>`;
+          parts.push(`<span class="ball-token manual" title="Manual strike swap">swap</span>`);
+          return;
         }
         const token = ballToken(event);
-        return `<button class="ball-token ${token.className}" type="button" data-edit="${event.index}" title="${escapeHtml(event.label)} · ${escapeHtml(event.summary)}">${escapeHtml(token.text)}</button>`;
-      }).join("");
+        parts.push(`<button class="ball-token ${token.className}" type="button" data-edit="${event.index}" title="${escapeHtml(event.label)} · ${escapeHtml(event.summary)}">${escapeHtml(token.text)}</button>`);
+        if (event.legal && event.legalBalls > 0 && event.legalBalls % 6 === 0) {
+          parts.push(`<span class="over-divider" title="Over ${Math.floor(event.legalBalls / 6)} complete">${Math.floor(event.legalBalls / 6)} ov</span>`);
+        }
+      });
+      els.ballLog.innerHTML = parts.join("");
       els.ballLog.querySelectorAll("[data-edit]").forEach((button) => {
         button.addEventListener("click", () => openEdit(safeNumber(button.dataset.edit)));
       });
+      els.ballLog.scrollLeft = els.ballLog.scrollWidth;
     }
 
     function ballToken(event) {
