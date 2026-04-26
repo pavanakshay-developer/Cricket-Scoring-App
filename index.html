@@ -573,15 +573,18 @@
     .ball-token {
       display: inline-grid;
       place-items: center;
+      flex: 0 0 auto;
+      width: max-content;
       min-width: 46px;
       min-height: 42px;
-      padding: 0.45rem 0.55rem;
+      padding: 0.45rem 0.65rem;
       border-radius: var(--radius);
       border: 1px solid var(--line);
       background: var(--panel-3);
       color: var(--text);
       font-weight: 950;
       line-height: 1;
+      white-space: nowrap;
     }
 
     .ball-token.wicket {
@@ -605,6 +608,7 @@
     .over-divider {
       display: inline-grid;
       place-items: center;
+      flex: 0 0 auto;
       min-width: 44px;
       min-height: 32px;
       padding: 0.3rem 0.4rem;
@@ -885,9 +889,10 @@
       }
 
       .ball-token {
-        min-width: 32px;
+        width: max-content;
+        min-width: 34px;
         min-height: 29px;
-        padding: 0.28rem 0.38rem;
+        padding: 0.28rem 0.5rem;
       }
 
       .over-divider {
@@ -2135,11 +2140,11 @@ Adam Hayes</textarea>
           parts.push(`<span class="ball-token manual" title="Manual strike swap">swap</span>`);
           return;
         }
+        if (event.legal && event.legalBalls > 0 && event.legalBalls % 6 === 1) {
+          parts.push(`<span class="over-divider" title="Over ${Math.floor(event.legalBalls / 6) + 1}">ov${Math.floor(event.legalBalls / 6) + 1}</span>`);
+        }
         const token = ballToken(event);
         parts.push(`<button class="ball-token ${token.className}" type="button" data-edit="${event.index}" title="${escapeHtml(event.label)} · ${escapeHtml(event.summary)}">${escapeHtml(token.text)}</button>`);
-        if (event.legal && event.legalBalls > 0 && event.legalBalls % 6 === 0) {
-          parts.push(`<span class="over-divider" title="Over ${Math.floor(event.legalBalls / 6)} complete">${Math.floor(event.legalBalls / 6)} ov</span>`);
-        }
       });
       els.ballLog.innerHTML = parts.join("");
       els.ballLog.querySelectorAll("[data-edit]").forEach((button) => {
@@ -2154,10 +2159,18 @@ Adam Hayes</textarea>
         const prefix = event.extraType ? event.extraType : (runs ? String(runs) : "");
         return { text: `${prefix}W`, className: "wicket" };
       }
-      if (event.extraType === "wd") return { text: event.extraRuns ? `wd+${event.extraRuns}` : "wd", className: "extra" };
-      if (event.extraType === "nb") return { text: event.runsBat ? `nb+${event.runsBat}` : "nb", className: "extra" };
-      if (event.extraType === "b") return { text: `${event.extraRuns}b`, className: "extra" };
-      if (event.extraType === "lb") return { text: `${event.extraRuns}lb`, className: "extra" };
+      if (event.extraType === "wd") {
+        const extra = safeNumber(event.extraRuns);
+        return { text: extra ? `wd+${extra}` : "wd", className: "extra" };
+      }
+      if (event.extraType === "nb") {
+        const extras = safeNumber(event.extraRuns);
+        const bat = safeNumber(event.runsBat);
+        const suffix = extras + bat;
+        return { text: suffix ? `nb+${suffix}` : "nb", className: "extra" };
+      }
+      if (event.extraType === "b") return { text: `${safeNumber(event.extraRuns)}b`, className: "extra" };
+      if (event.extraType === "lb") return { text: `${safeNumber(event.extraRuns)}lb`, className: "extra" };
       return { text: String(event.runsBat), className: "" };
     }
 
