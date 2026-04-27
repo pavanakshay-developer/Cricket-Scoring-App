@@ -377,6 +377,22 @@
       align-items: end;
     }
 
+    .auth-panel {
+      max-width: 560px;
+      margin: 2rem auto 0;
+    }
+
+    .auth-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(120px, auto);
+      gap: 0.65rem;
+      align-items: end;
+    }
+
+    .user-bar {
+      align-items: center;
+    }
+
     .print-actions {
       justify-content: flex-end;
     }
@@ -886,6 +902,10 @@
         grid-template-columns: 1fr;
       }
 
+      .auth-grid {
+        grid-template-columns: 1fr;
+      }
+
       .print-actions {
         justify-content: stretch;
       }
@@ -1056,13 +1076,35 @@
       <button id="themeToggleBtn" class="icon-button" type="button" aria-label="Switch to light theme" title="Toggle theme">☾</button>
     </header>
 
-    <main>
+    <section id="authScreen" class="screen auth-panel">
+      <div class="panel panel-pad screen">
+        <div>
+          <h2>Sign In</h2>
+          <p class="muted">Enter your email, then use the code sent by Supabase to access your matches.</p>
+        </div>
+        <div class="auth-grid">
+          <label>Email
+            <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com">
+          </label>
+          <button id="sendCodeBtn" class="primary" type="button">Send Code</button>
+        </div>
+        <div id="otpRow" class="auth-grid hidden">
+          <label>Email Code
+            <input id="authCode" inputmode="numeric" autocomplete="one-time-code" placeholder="123456">
+          </label>
+          <button id="verifyCodeBtn" class="primary" type="button">Verify</button>
+        </div>
+        <p id="authStatus" class="muted">Sign in or sign up with email to continue.</p>
+      </div>
+    </section>
+
+    <main id="appMain" class="hidden">
       <section id="setupScreen" class="screen">
         <div class="panel panel-pad screen">
           <div class="score-line">
             <div>
               <h2>Saved Matches</h2>
-              <p class="muted">Load an existing scorecard from Supabase or start a new one below.</p>
+              <p class="muted">Load one of your scorecards from Supabase or start a new one below.</p>
             </div>
             <span id="syncStatus" class="sync-status" data-state="idle">Connecting...</span>
           </div>
@@ -1075,7 +1117,12 @@
             <div class="row-actions">
               <button id="loadMatchBtn" class="secondary" type="button">Load Match</button>
               <button id="refreshMatchesBtn" class="secondary" type="button">Refresh</button>
+              <button id="deleteMatchBtn" class="danger" type="button">Delete</button>
             </div>
+          </div>
+          <div class="row-actions user-bar">
+            <span id="signedInAs" class="muted"></span>
+            <button id="signOutBtn" class="secondary mini" type="button">Sign Out</button>
           </div>
         </div>
         <div class="panel panel-pad">
@@ -1425,11 +1472,22 @@ Adam Hayes</textarea>
 
     const $ = (id) => document.getElementById(id);
     const els = {
+      authScreen: $("authScreen"),
+      appMain: $("appMain"),
+      authEmail: $("authEmail"),
+      authCode: $("authCode"),
+      sendCodeBtn: $("sendCodeBtn"),
+      verifyCodeBtn: $("verifyCodeBtn"),
+      authStatus: $("authStatus"),
+      otpRow: $("otpRow"),
+      signedInAs: $("signedInAs"),
+      signOutBtn: $("signOutBtn"),
       setupScreen: $("setupScreen"),
       dashboardScreen: $("dashboardScreen"),
       matchSelect: $("matchSelect"),
       loadMatchBtn: $("loadMatchBtn"),
       refreshMatchesBtn: $("refreshMatchesBtn"),
+      deleteMatchBtn: $("deleteMatchBtn"),
       syncStatus: $("syncStatus"),
       teamAName: $("teamAName"),
       teamBName: $("teamBName"),
@@ -1506,8 +1564,10 @@ Adam Hayes</textarea>
     };
 
     let match = null;
-    let activeMatchId = localStorage.getItem(ACTIVE_MATCH_ID_KEY) || "";
+    let activeMatchId = "";
     let matchSummaries = [];
+    let authUser = null;
+    let pendingAuthEmail = "";
     let supabaseClient = null;
     let saveTimer = null;
     let saveVersion = 0;
@@ -1543,12 +1603,147 @@ Adam Hayes</textarea>
       return "Save failed";
     }
 
+    function isRemoteSetupError(error) {
+      return Boolean(error?.code || /row level|policy|permission|schema|table/i.test(error?.message || ""));
+    }
+
     function logSyncError(context, error) {
       console.error(`${context}:`, error);
     }
 
+    function setAuthStatus(message) {
+      els.authStatus.textContent = message;
+    }
+
+    function userActiveKey() {
+      return authUser ? `${ACTIVE_MATCH_ID_KEY}-${authUser.id}` : ACTIVE_MATCH_ID_KEY;
+    }
+
+    function loadUserActiveMatchId() {
+      activeMatchId = authUser ? localStorage.getItem(userActiveKey()) || "" : "";
+    }
+
+    function storeUserActiveMatchId(matchId) {
+      activeMatchId = matchId || "";
+      if (!authUser) return;
+      if (activeMatchId) {
+        localStorage.setItem(userActiveKey(), activeMatchId);
+      } else {
+        localStorage.removeItem(userActiveKey());
+      }
+    }
+
+    function clearSessionState() {
+      match = null;
+      activeMatchId = "";
+      matchSummaries = [];
+      lastSimulation = null;
+      selectedScorecardInnings = 0;
+      editing = null;
+      pendingWicketEvent = null;
+    }
+
+    function closeOpenDialogs() {
+      [
+        els.scorecardDialog,
+        els.bowlerDialog,
+        els.editDialog,
+        els.wicketDialog,
+        els.nextBatterDialog
+      ].forEach((dialog) => {
+        if (dialog?.open) dialog.close();
+      });
+    }
+
+    function renderAuthGate() {
+      const signedIn = Boolean(authUser);
+      els.authScreen.classList.toggle("hidden", signedIn);
+      els.appMain.classList.toggle("hidden", !signedIn);
+      els.signedInAs.textContent = signedIn ? `Signed in as ${authUser.email}` : "";
+      if (!signedIn) {
+        closeOpenDialogs();
+        els.setupScreen.classList.add("hidden");
+        els.dashboardScreen.classList.add("hidden");
+      }
+    }
+
+    async function sendEmailCode() {
+      const email = els.authEmail.value.trim();
+      if (!email) {
+        setAuthStatus("Enter an email address.");
+        return;
+      }
+      const client = getSupabaseClient();
+      if (!client) {
+        setAuthStatus("Add Supabase config first.");
+        return;
+      }
+      els.sendCodeBtn.disabled = true;
+      setAuthStatus("Sending code...");
+      const { error } = await client.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true }
+      });
+      els.sendCodeBtn.disabled = false;
+      if (error) {
+        logSyncError("Could not send Supabase email code", error);
+        setAuthStatus(error.message || "Could not send code.");
+        return;
+      }
+      pendingAuthEmail = email;
+      els.otpRow.classList.remove("hidden");
+      setAuthStatus("Check your email and enter the six digit code.");
+    }
+
+    async function verifyEmailCode() {
+      const email = (pendingAuthEmail || els.authEmail.value).trim();
+      const token = els.authCode.value.trim();
+      if (!email || !token) {
+        setAuthStatus("Enter your email and code.");
+        return;
+      }
+      const client = getSupabaseClient();
+      if (!client) {
+        setAuthStatus("Add Supabase config first.");
+        return;
+      }
+      els.verifyCodeBtn.disabled = true;
+      setAuthStatus("Verifying code...");
+      const { data, error } = await client.auth.verifyOtp({
+        email,
+        token,
+        type: "email"
+      });
+      els.verifyCodeBtn.disabled = false;
+      if (error) {
+        logSyncError("Could not verify Supabase email code", error);
+        setAuthStatus(error.message || "Could not verify code.");
+        return;
+      }
+      authUser = data.user || data.session?.user || null;
+      pendingAuthEmail = "";
+      els.authCode.value = "";
+      setAuthStatus("Signed in.");
+      await handleSignedIn();
+    }
+
+    async function signOut() {
+      const client = getSupabaseClient();
+      if (client) await client.auth.signOut();
+      authUser = null;
+      clearSessionState();
+      renderAuthGate();
+      setAuthStatus("Signed out.");
+    }
+
+    async function handleSignedIn() {
+      renderAuthGate();
+      loadUserActiveMatchId();
+      await restoreActiveMatch();
+    }
+
     function pendingKey(matchId) {
-      return PENDING_SYNC_KEY_PREFIX + matchId;
+      return `${PENDING_SYNC_KEY_PREFIX}${authUser?.id || "anonymous"}-${matchId}`;
     }
 
     function matchTitle(matchData) {
@@ -1593,10 +1788,11 @@ Adam Hayes</textarea>
 
     function pendingSummaries() {
       const summaries = [];
+      const prefix = `${PENDING_SYNC_KEY_PREFIX}${authUser?.id || "anonymous"}-`;
       for (let index = 0; index < localStorage.length; index += 1) {
         const key = localStorage.key(index);
-        if (!key || !key.startsWith(PENDING_SYNC_KEY_PREFIX)) continue;
-        const pending = readPendingSync(key.slice(PENDING_SYNC_KEY_PREFIX.length));
+        if (!key || !key.startsWith(prefix)) continue;
+        const pending = readPendingSync(key.slice(prefix.length));
         if (pending) {
           summaries.push({
             id: pending.id,
@@ -1614,9 +1810,11 @@ Adam Hayes</textarea>
       if (!matchSummaries.length) {
         els.matchSelect.innerHTML = `<option value="">No saved matches yet</option>`;
         els.loadMatchBtn.disabled = true;
+        els.deleteMatchBtn.disabled = true;
         return;
       }
       els.loadMatchBtn.disabled = false;
+      els.deleteMatchBtn.disabled = false;
       els.matchSelect.innerHTML = matchSummaries.map((item) => {
         const label = `${item.title}${item.pending ? " (pending sync)" : ""}${item.complete ? " (final)" : ""}`;
         return `<option value="${escapeHtml(item.id)}" ${item.id === activeMatchId ? "selected" : ""}>${escapeHtml(label)}</option>`;
@@ -1654,12 +1852,14 @@ Adam Hayes</textarea>
     }
 
     async function listMatches() {
+      if (!authUser) return [];
       let rows = [];
       const client = getSupabaseClient();
       if (client) {
         const { data, error } = await client
           .from(MATCHES_TABLE)
           .select("id,title,complete,updated_at")
+          .eq("user_id", authUser.id)
           .order("updated_at", { ascending: false });
         if (error) throw error;
         rows = data || [];
@@ -1675,6 +1875,11 @@ Adam Hayes</textarea>
     }
 
     async function refreshMatches(options = {}) {
+      if (!authUser) {
+        matchSummaries = [];
+        renderMatchOptions();
+        return;
+      }
       if (!isSupabaseConfigured()) {
         matchSummaries = pendingSummaries();
         renderMatchOptions();
@@ -1694,10 +1899,12 @@ Adam Hayes</textarea>
     }
 
     async function saveMatch(matchId, matchData, title = currentMatchTitle()) {
+      if (!authUser) throw new Error("Sign in before saving matches.");
       const client = getSupabaseClient();
       if (!client) throw new Error("Supabase is not configured.");
       const payload = {
         id: matchId,
+        user_id: authUser.id,
         title: title || datedMatchTitle(matchData),
         match_data: matchData,
         complete: Boolean(matchData.complete),
@@ -1713,17 +1920,16 @@ Adam Hayes</textarea>
     async function createMatch(matchData) {
       const matchId = crypto.randomUUID();
       const title = datedMatchTitle(matchData);
-      activeMatchId = matchId;
-      localStorage.setItem(ACTIVE_MATCH_ID_KEY, matchId);
+      storeUserActiveMatchId(matchId);
       try {
         setSyncStatus("Saving...", "saving");
         await saveMatch(matchId, matchData, title);
         setSyncStatus("Saved", "saved");
       } catch (error) {
         logSyncError("Could not create Supabase match", error);
-        if (error?.code === "PGRST205") {
+        if (isRemoteSetupError(error)) {
           setSyncStatus(syncErrorMessage(error), "error");
-          toast("Create the Supabase matches table first.");
+          toast(error.code === "PGRST205" ? "Create the Supabase matches table first." : "Check Supabase auth policies.");
         } else {
           storePendingSync(matchId, title, matchData);
           upsertPendingSummary(matchId, title, matchData);
@@ -1738,8 +1944,7 @@ Adam Hayes</textarea>
       if (!matchId) return;
       const pending = readPendingSync(matchId);
       if (pending) {
-        activeMatchId = matchId;
-        localStorage.setItem(ACTIVE_MATCH_ID_KEY, matchId);
+        storeUserActiveMatchId(matchId);
         match = pending.matchData;
         render();
         setSyncStatus("Offline changes pending", "pending");
@@ -1757,6 +1962,7 @@ Adam Hayes</textarea>
         .from(MATCHES_TABLE)
         .select("id,title,match_data")
         .eq("id", matchId)
+        .eq("user_id", authUser.id)
         .single();
       if (error) {
         logSyncError("Could not load Supabase match", error);
@@ -1764,8 +1970,7 @@ Adam Hayes</textarea>
         toast(error.code === "PGRST205" ? "Create the Supabase matches table first." : "Could not load that match.");
         return;
       }
-      activeMatchId = data.id;
-      localStorage.setItem(ACTIVE_MATCH_ID_KEY, activeMatchId);
+      storeUserActiveMatchId(data.id);
       match = data.match_data;
       render();
       setSyncStatus("Saved", "saved");
@@ -1775,14 +1980,36 @@ Adam Hayes</textarea>
       await loadMatch(els.matchSelect.value);
     }
 
-    async function deleteOrArchiveMatch(matchId) {
-      if (matchId && matchId === activeMatchId) {
-        activeMatchId = "";
-        localStorage.removeItem(ACTIVE_MATCH_ID_KEY);
+    async function deleteOrArchiveMatch(matchId, options = {}) {
+      if (!matchId) return;
+      if (!options.localOnly) {
+        const client = getSupabaseClient();
+        if (!client) {
+          setSyncStatus("Add Supabase config", "error");
+          return;
+        }
+        setSyncStatus("Deleting...", "saving");
+        const { error } = await client
+          .from(MATCHES_TABLE)
+          .delete()
+          .eq("id", matchId)
+          .eq("user_id", authUser.id);
+        if (error) {
+          logSyncError("Could not delete Supabase match", error);
+          setSyncStatus(syncErrorMessage(error), "error");
+          toast("Could not delete that match.");
+          return;
+        }
       }
-      match = null;
-      render();
+      localStorage.removeItem(pendingKey(matchId));
+      matchSummaries = matchSummaries.filter((item) => item.id !== matchId);
+      if (matchId === activeMatchId) {
+        storeUserActiveMatchId("");
+        match = null;
+        render();
+      }
       await refreshMatches();
+      setSyncStatus("Saved", "saved");
     }
 
     async function flushPendingSync() {
@@ -1797,7 +2024,7 @@ Adam Hayes</textarea>
           await saveMatch(snapshot.id, snapshot.matchData, snapshot.title);
         } catch (error) {
           logSyncError("Could not flush pending Supabase match", error);
-          setSyncStatus(error?.code === "PGRST205" ? syncErrorMessage(error) : "Offline changes pending", error?.code === "PGRST205" ? "error" : "pending");
+          setSyncStatus(isRemoteSetupError(error) ? syncErrorMessage(error) : "Offline changes pending", isRemoteSetupError(error) ? "error" : "pending");
           return;
         }
       }
@@ -1817,9 +2044,9 @@ Adam Hayes</textarea>
           if (version === saveVersion) setSyncStatus("Saved", "saved");
         } catch (error) {
           logSyncError("Could not save Supabase match", error);
-          if (error?.code === "PGRST205") {
+          if (isRemoteSetupError(error)) {
             setSyncStatus(syncErrorMessage(error), "error");
-            toast("Create the Supabase matches table first.");
+            toast(error.code === "PGRST205" ? "Create the Supabase matches table first." : "Check Supabase auth policies.");
             return;
           }
           const title = currentMatchTitle();
@@ -2448,6 +2675,10 @@ Adam Hayes</textarea>
     }
 
     function render() {
+      if (!authUser) {
+        renderAuthGate();
+        return;
+      }
       if (!match) {
         els.setupScreen.classList.remove("hidden");
         els.dashboardScreen.classList.add("hidden");
@@ -2798,9 +3029,55 @@ Adam Hayes</textarea>
 
     async function resetMatch() {
       if (!confirm("Clear the current screen and return to match setup? Saved Supabase matches will stay available.")) return;
-      await deleteOrArchiveMatch(activeMatchId);
+      storeUserActiveMatchId("");
+      match = null;
+      render();
       setSyncStatus("Saved", "saved");
       toast("Ready for a new match.");
+    }
+
+    async function deleteSelectedMatch() {
+      const matchId = els.matchSelect.value;
+      if (!matchId) {
+        toast("Choose a saved match to delete.");
+        return;
+      }
+      const selected = matchSummaries.find((item) => item.id === matchId);
+      const name = selected?.title || "this match";
+      if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
+      await deleteOrArchiveMatch(matchId);
+      toast("Match deleted.");
+    }
+
+    async function initAuth() {
+      const client = getSupabaseClient();
+      if (!client) {
+        renderAuthGate();
+        setAuthStatus("Add Supabase config first.");
+        return;
+      }
+
+      const { data } = await client.auth.getSession();
+      authUser = data.session?.user || null;
+      if (authUser) {
+        await handleSignedIn();
+      } else {
+        clearSessionState();
+        renderAuthGate();
+      }
+
+      client.auth.onAuthStateChange(async (_event, session) => {
+        const nextUser = session?.user || null;
+        if (nextUser?.id === authUser?.id) return;
+        authUser = nextUser;
+        if (authUser) {
+          await handleSignedIn();
+        } else {
+          clearSessionState();
+          renderAuthGate();
+          setAuthStatus("Sign in or sign up with email to continue.");
+        }
+      });
     }
 
     function escapeHtml(value) {
@@ -2829,8 +3106,12 @@ Adam Hayes</textarea>
     }
 
     els.startMatchBtn.addEventListener("click", startMatch);
+    els.sendCodeBtn.addEventListener("click", sendEmailCode);
+    els.verifyCodeBtn.addEventListener("click", verifyEmailCode);
+    els.signOutBtn.addEventListener("click", signOut);
     els.loadMatchBtn.addEventListener("click", loadSelectedMatch);
     els.refreshMatchesBtn.addEventListener("click", () => refreshMatches({ showStatus: true }));
+    els.deleteMatchBtn.addEventListener("click", deleteSelectedMatch);
     els.loadDemoBtn.addEventListener("click", loadDemo);
     els.resetBtn.addEventListener("click", resetMatch);
     els.saveSnapshotBtn.addEventListener("click", () => {
@@ -2872,7 +3153,7 @@ Adam Hayes</textarea>
     window.addEventListener("online", flushPendingSync);
 
     applyTheme(localStorage.getItem(THEME_KEY) || "dark");
-    restoreActiveMatch();
+    initAuth();
   </script>
 </body>
 </html>

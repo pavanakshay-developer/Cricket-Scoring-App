@@ -7,11 +7,12 @@ A professional single-file HTML5/JavaScript cricket scoring app for T20 match sc
 The app is still a single static `index.html` file, but match scorecards now save to Supabase instead of permanent browser storage.
 
 1. Create a Supabase project.
-2. Run this SQL in the Supabase SQL editor:
+2. Run this SQL in the Supabase SQL editor for a new setup:
 
 ```sql
 create table public.matches (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   title text not null,
   match_data jsonb not null,
   complete boolean not null default false,
@@ -35,24 +36,68 @@ execute function public.set_updated_at();
 
 alter table public.matches enable row level security;
 
-create policy "Public read matches"
+create policy "Users can read their matches"
 on public.matches for select
-to anon
-using (true);
+to authenticated
+using (auth.uid() = user_id);
 
-create policy "Public create matches"
+create policy "Users can create their matches"
 on public.matches for insert
-to anon
-with check (true);
+to authenticated
+with check (auth.uid() = user_id);
 
-create policy "Public update matches"
+create policy "Users can update their matches"
 on public.matches for update
-to anon
-using (true)
-with check (true);
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "Users can delete their matches"
+on public.matches for delete
+to authenticated
+using (auth.uid() = user_id);
 ```
 
+If you already created the earlier public `matches` table, run this migration instead:
+
+```sql
+alter table public.matches
+add column if not exists user_id uuid references auth.users(id) on delete cascade;
+
+drop policy if exists "Public read matches" on public.matches;
+drop policy if exists "Public create matches" on public.matches;
+drop policy if exists "Public update matches" on public.matches;
+drop policy if exists "Users can read their matches" on public.matches;
+drop policy if exists "Users can create their matches" on public.matches;
+drop policy if exists "Users can update their matches" on public.matches;
+drop policy if exists "Users can delete their matches" on public.matches;
+
+create policy "Users can read their matches"
+on public.matches for select
+to authenticated
+using (auth.uid() = user_id);
+
+create policy "Users can create their matches"
+on public.matches for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+create policy "Users can update their matches"
+on public.matches for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "Users can delete their matches"
+on public.matches for delete
+to authenticated
+using (auth.uid() = user_id);
+```
+
+Existing rows without `user_id` will not appear in any user's account. Delete them or backfill them to a specific Supabase Auth user ID if you need to keep them.
+
 3. In `index.html`, set `SUPABASE_PUBLISHABLE_KEY` near the top of the script. Do not put a Supabase secret key in this static HTML file.
+4. In Supabase Auth email templates, include the `{{ .Token }}` value so users receive a code they can enter in the app.
 
 If the app shows `Create matches table` or Supabase returns `PGRST205`, the SQL above has not been run in the connected project, or Supabase needs a moment to refresh its schema cache.
 
@@ -77,7 +122,8 @@ This project is ready for basic GitHub Pages hosting. Because the app is contain
 - Automatic next-batter prompt after a wicket.
 - Full scorecard modal with current and previous innings views.
 - Printable match overview and innings scorecards.
-- Supabase match storage with multiple saved matches.
+- Supabase email code sign-in and account-scoped match storage.
+- Multiple saved matches with delete support after login.
 - Lightweight pending-sync fallback if the scorer loses internet.
 
 ## Cricket Logic
