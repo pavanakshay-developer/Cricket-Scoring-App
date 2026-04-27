@@ -370,6 +370,63 @@
       min-height: 38px;
     }
 
+    .auth-hero {
+      display: grid;
+      gap: 1rem;
+      padding: 1.2rem;
+      background: linear-gradient(135deg, #0d151f 0%, #12241c 56%, #152033 100%);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    :root[data-theme="light"] .auth-hero {
+      background: linear-gradient(135deg, #ffffff 0%, #eef8f2 54%, #edf5fb 100%);
+    }
+
+    .auth-hero h2 {
+      max-width: 780px;
+      font-size: clamp(2rem, 6vw, 4.4rem);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .auth-hero .muted {
+      max-width: 720px;
+      font-size: 1rem;
+    }
+
+    .auth-feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.65rem;
+    }
+
+    .auth-feature {
+      display: grid;
+      gap: 0.35rem;
+      padding: 0.8rem;
+      border: 1px solid rgba(98, 114, 139, 0.72);
+      border-radius: var(--radius);
+      background: rgba(17, 23, 34, 0.72);
+    }
+
+    :root[data-theme="light"] .auth-feature {
+      background: rgba(255, 255, 255, 0.76);
+      border-color: #9dafaa;
+    }
+
+    .auth-feature strong {
+      font-size: 0.92rem;
+    }
+
+    .auth-feature span {
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 650;
+    }
+
     .scorecard-toolbar {
       display: grid;
       grid-template-columns: minmax(180px, 1fr) auto;
@@ -378,8 +435,8 @@
     }
 
     .auth-panel {
-      max-width: 560px;
-      margin: 2rem auto 0;
+      width: min(920px, 100%);
+      margin: 1.5rem auto 0;
     }
 
     .auth-grid {
@@ -906,6 +963,10 @@
         grid-template-columns: 1fr;
       }
 
+      .auth-feature-grid {
+        grid-template-columns: 1fr;
+      }
+
       .print-actions {
         justify-content: stretch;
       }
@@ -1077,6 +1138,26 @@
     </header>
 
     <section id="authScreen" class="screen auth-panel">
+      <section class="auth-hero">
+        <div>
+          <h2>Score every ball, keep every match.</h2>
+          <p class="muted">A fast T20 scorer for live matches, complete scorecards, replay-safe edits, and account-backed game history.</p>
+        </div>
+        <div class="auth-feature-grid" aria-label="Application features">
+          <div class="auth-feature">
+            <strong>Live scoring</strong>
+            <span>Runs, extras, wickets, strike, bowlers, targets, CRR, and RRR stay in sync.</span>
+          </div>
+          <div class="auth-feature">
+            <strong>Full scorecards</strong>
+            <span>Review either innings, print match summaries, and keep clean batting and bowling tables.</span>
+          </div>
+          <div class="auth-feature">
+            <strong>Your match history</strong>
+            <span>Sign in with email to save, reopen, and delete games from your Supabase account.</span>
+          </div>
+        </div>
+      </section>
       <div class="panel panel-pad screen">
         <div>
           <h2>Sign In</h2>
@@ -1269,7 +1350,7 @@ Adam Hayes</textarea>
       </section>
     </main>
 
-    <div class="bottom-actions">
+    <div id="bottomActions" class="bottom-actions hidden">
       <button id="saveSnapshotBtn" class="secondary mini" type="button">Save</button>
       <button id="resetBtn" class="danger mini" type="button">New Match</button>
     </div>
@@ -1474,6 +1555,7 @@ Adam Hayes</textarea>
     const els = {
       authScreen: $("authScreen"),
       appMain: $("appMain"),
+      bottomActions: $("bottomActions"),
       authEmail: $("authEmail"),
       authCode: $("authCode"),
       sendCodeBtn: $("sendCodeBtn"),
@@ -1659,6 +1741,7 @@ Adam Hayes</textarea>
       const signedIn = Boolean(authUser);
       els.authScreen.classList.toggle("hidden", signedIn);
       els.appMain.classList.toggle("hidden", !signedIn);
+      els.bottomActions.classList.toggle("hidden", !signedIn);
       els.signedInAs.textContent = signedIn ? `Signed in as ${authUser.email}` : "";
       if (!signedIn) {
         closeOpenDialogs();
