@@ -1,10 +1,64 @@
 # Cricket Scoring App
 
-A professional single-file HTML5/JavaScript cricket scoring app for local, offline T20 match scoring. It is designed for phone-first use on the boundary, while still working well on desktop browsers.
+A professional single-file HTML5/JavaScript cricket scoring app for T20 match scoring with Supabase-backed save/load. It is designed for phone-first use on the boundary, while still working well on desktop browsers.
+
+## Supabase Setup
+
+The app is still a single static `index.html` file, but match scorecards now save to Supabase instead of permanent browser storage.
+
+1. Create a Supabase project.
+2. Run this SQL in the Supabase SQL editor:
+
+```sql
+create table public.matches (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  match_data jsonb not null,
+  complete boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create trigger set_matches_updated_at
+before update on public.matches
+for each row
+execute function public.set_updated_at();
+
+alter table public.matches enable row level security;
+
+create policy "Public read matches"
+on public.matches for select
+to anon
+using (true);
+
+create policy "Public create matches"
+on public.matches for insert
+to anon
+with check (true);
+
+create policy "Public update matches"
+on public.matches for update
+to anon
+using (true)
+with check (true);
+```
+
+3. In `index.html`, set `SUPABASE_PUBLISHABLE_KEY` near the top of the script. Do not put a Supabase secret key in this static HTML file.
+
+If the app shows `Create matches table` or Supabase returns `PGRST205`, the SQL above has not been run in the connected project, or Supabase needs a moment to refresh its schema cache.
 
 ## Live Hosting
 
-This project is ready for basic GitHub Pages hosting. Because the app is contained in `index.html` and has no external dependencies, GitHub Pages can serve it directly from the repository root.
+This project is ready for basic GitHub Pages hosting. Because the app is contained in `index.html` and loads Supabase from a CDN, GitHub Pages can serve it directly from the repository root.
 
 ## Features
 
@@ -21,8 +75,10 @@ This project is ready for basic GitHub Pages hosting. Because the app is contain
 - Replay-based re-simulation after edits to preserve score, strike, bowler figures, and scorecard integrity.
 - Wicket workflow with dismissal type and fielder capture where needed.
 - Automatic next-batter prompt after a wicket.
-- Full scorecard modal for batting, bowling, and match overview.
-- Local browser storage for match recovery.
+- Full scorecard modal with current and previous innings views.
+- Printable match overview and innings scorecards.
+- Supabase match storage with multiple saved matches.
+- Lightweight pending-sync fallback if the scorer loses internet.
 
 ## Cricket Logic
 
@@ -36,7 +92,7 @@ This project is ready for basic GitHub Pages hosting. Because the app is contain
 
 ## Offline Use
 
-Open `index.html` directly in any modern browser. No internet connection is required after the file is available on the device.
+Open `index.html` directly in any modern browser. An internet connection is required for Supabase sync, but the app keeps the latest unsynced scorecard snapshot in browser storage if a save fails and pushes it when the connection returns.
 
 ## GitHub Pages Setup
 
@@ -79,7 +135,7 @@ git push
 
 ## Notes
 
-- The app is intentionally dependency-free for reliability and offline use.
-- Match data is saved in the browser's local storage, so it is device/browser specific.
-- Clearing browser data will remove saved match progress.
+- The app intentionally stays as one HTML file.
+- Match data is saved in Supabase.
+- Browser storage is only used for theme preference, the active match ID, and pending sync recovery.
 - Historical edits trigger full replay of the innings event log.

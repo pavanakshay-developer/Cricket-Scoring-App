@@ -229,6 +229,60 @@
       gap: 1rem;
     }
 
+    .match-picker-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 0.65rem;
+      align-items: end;
+    }
+
+    .sync-status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0.3rem 0.55rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 850;
+    }
+
+    .sync-status[data-state="saved"] {
+      border-color: rgba(47, 209, 132, 0.72);
+      color: #bcffd9;
+    }
+
+    .sync-status[data-state="saving"],
+    .sync-status[data-state="pending"] {
+      border-color: rgba(255, 200, 87, 0.78);
+      color: #ffe8ac;
+    }
+
+    .sync-status[data-state="error"] {
+      border-color: rgba(255, 107, 107, 0.84);
+      color: #ffd7d7;
+    }
+
+    :root[data-theme="light"] .sync-status {
+      background: #ffffff;
+      color: #415148;
+    }
+
+    :root[data-theme="light"] .sync-status[data-state="saved"] {
+      color: #055f37;
+    }
+
+    :root[data-theme="light"] .sync-status[data-state="saving"],
+    :root[data-theme="light"] .sync-status[data-state="pending"] {
+      color: #654200;
+    }
+
+    :root[data-theme="light"] .sync-status[data-state="error"] {
+      color: #851720;
+    }
+
     .setup-actions,
     .row-actions,
     .control-row,
@@ -314,6 +368,17 @@
     .bottom-actions button {
       flex: 1 1 0;
       min-height: 38px;
+    }
+
+    .scorecard-toolbar {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto;
+      gap: 0.65rem;
+      align-items: end;
+    }
+
+    .print-actions {
+      justify-content: flex-end;
     }
 
     .dashboard {
@@ -813,6 +878,22 @@
         grid-template-columns: 1fr;
       }
 
+      .match-picker-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .scorecard-toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .print-actions {
+        justify-content: stretch;
+      }
+
+      .print-actions button {
+        flex: 1 1 auto;
+      }
+
       .scoring-options {
         grid-template-columns: 1fr 0.55fr;
         gap: 0.35rem;
@@ -969,7 +1050,7 @@
         <div class="mark" aria-hidden="true">C</div>
         <div>
           <h1>Cricket Scoring App</h1>
-          <p class="muted">Offline T20 scorer with replay-safe ball editing.</p>
+          <p class="muted">Supabase-backed T20 scorer with replay-safe ball editing.</p>
         </div>
       </div>
       <button id="themeToggleBtn" class="icon-button" type="button" aria-label="Switch to light theme" title="Toggle theme">☾</button>
@@ -977,6 +1058,26 @@
 
     <main>
       <section id="setupScreen" class="screen">
+        <div class="panel panel-pad screen">
+          <div class="score-line">
+            <div>
+              <h2>Saved Matches</h2>
+              <p class="muted">Load an existing scorecard from Supabase or start a new one below.</p>
+            </div>
+            <span id="syncStatus" class="sync-status" data-state="idle">Connecting...</span>
+          </div>
+          <div class="match-picker-grid">
+            <label>Saved Match
+              <select id="matchSelect">
+                <option value="">Loading matches...</option>
+              </select>
+            </label>
+            <div class="row-actions">
+              <button id="loadMatchBtn" class="secondary" type="button">Load Match</button>
+              <button id="refreshMatchesBtn" class="secondary" type="button">Refresh</button>
+            </div>
+          </div>
+        </div>
         <div class="panel panel-pad">
           <h2>Match Setup</h2>
           <p class="muted">Enter one player per line. The first two listed players open the batting for that team.</p>
@@ -1038,7 +1139,7 @@ Adam Hayes</textarea>
             </label>
           </div>
           <div class="setup-actions">
-            <button id="startMatchBtn" class="primary" type="button">Start Match</button>
+            <button id="startMatchBtn" class="primary" type="button">Start New Match</button>
             <button id="loadDemoBtn" class="secondary" type="button">Use Sample Names</button>
           </div>
         </div>
@@ -1184,7 +1285,18 @@ Adam Hayes</textarea>
         <button id="closeScorecardBtn" class="secondary mini" type="button">Close</button>
       </div>
       <section class="screen">
-        <h2>Batting</h2>
+        <div class="scorecard-toolbar">
+          <label>Scorecard
+            <select id="scorecardInningsSelect"></select>
+          </label>
+          <div class="row-actions print-actions">
+            <button id="printInningsBtn" class="secondary mini" type="button">Print Innings</button>
+            <button id="printOverviewBtn" class="secondary mini" type="button">Print Overview</button>
+          </div>
+        </div>
+      </section>
+      <section class="screen">
+        <h2 id="scorecardBattingTitle">Batting</h2>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1197,7 +1309,7 @@ Adam Hayes</textarea>
         </div>
       </section>
       <section class="screen">
-        <h2>Bowling</h2>
+        <h2 id="scorecardBowlingTitle">Bowling</h2>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1298,8 +1410,13 @@ Adam Hayes</textarea>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    const STORAGE_KEY = "offline-cricket-scorer-v1";
+    const SUPABASE_URL = "https://atrrssqerrhsegechbet.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_fuEtke_4n3aVjyv92dJ6xw_rYhr5Gdd";
+    const MATCHES_TABLE = "matches";
+    const ACTIVE_MATCH_ID_KEY = "offline-cricket-scorer-active-match-id";
+    const PENDING_SYNC_KEY_PREFIX = "offline-cricket-scorer-pending-sync-";
     const THEME_KEY = "offline-cricket-scorer-theme";
     const DEFAULT_OVERS = 20;
     const WICKET_TYPES_WITH_BOWLER = new Set(["bowled", "caught", "lbw", "stumped", "hitwicket"]);
@@ -1310,6 +1427,10 @@ Adam Hayes</textarea>
     const els = {
       setupScreen: $("setupScreen"),
       dashboardScreen: $("dashboardScreen"),
+      matchSelect: $("matchSelect"),
+      loadMatchBtn: $("loadMatchBtn"),
+      refreshMatchesBtn: $("refreshMatchesBtn"),
+      syncStatus: $("syncStatus"),
       teamAName: $("teamAName"),
       teamBName: $("teamBName"),
       teamARoster: $("teamARoster"),
@@ -1349,6 +1470,11 @@ Adam Hayes</textarea>
       matchOverview: $("matchOverview"),
       scorecardDialog: $("scorecardDialog"),
       closeScorecardBtn: $("closeScorecardBtn"),
+      scorecardInningsSelect: $("scorecardInningsSelect"),
+      scorecardBattingTitle: $("scorecardBattingTitle"),
+      scorecardBowlingTitle: $("scorecardBowlingTitle"),
+      printInningsBtn: $("printInningsBtn"),
+      printOverviewBtn: $("printOverviewBtn"),
       bowlerDialog: $("bowlerDialog"),
       overBowlerSelect: $("overBowlerSelect"),
       confirmBowlerBtn: $("confirmBowlerBtn"),
@@ -1380,12 +1506,328 @@ Adam Hayes</textarea>
     };
 
     let match = null;
+    let activeMatchId = localStorage.getItem(ACTIVE_MATCH_ID_KEY) || "";
+    let matchSummaries = [];
+    let supabaseClient = null;
+    let saveTimer = null;
+    let saveVersion = 0;
     let lastSimulation = null;
+    let selectedScorecardInnings = 0;
     let editing = null;
     let pendingWicketEvent = null;
 
     function uid(prefix) {
       return prefix + "-" + Math.random().toString(36).slice(2, 10);
+    }
+
+    function isSupabaseConfigured() {
+      return Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY && window.supabase);
+    }
+
+    function getSupabaseClient() {
+      if (!isSupabaseConfigured()) return null;
+      if (!supabaseClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+      }
+      return supabaseClient;
+    }
+
+    function setSyncStatus(message, state = "idle") {
+      els.syncStatus.textContent = message;
+      els.syncStatus.dataset.state = state;
+    }
+
+    function syncErrorMessage(error) {
+      if (error?.code === "PGRST205") return "Create matches table";
+      if (error?.message) return error.message;
+      return "Save failed";
+    }
+
+    function logSyncError(context, error) {
+      console.error(`${context}:`, error);
+    }
+
+    function pendingKey(matchId) {
+      return PENDING_SYNC_KEY_PREFIX + matchId;
+    }
+
+    function matchTitle(matchData) {
+      if (!matchData?.teams?.length) return "Untitled match";
+      return `${matchData.teams[0].name} vs ${matchData.teams[1].name}`;
+    }
+
+    function datedMatchTitle(matchData) {
+      const date = new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      });
+      return `${matchTitle(matchData)} - ${date}`;
+    }
+
+    function currentMatchTitle() {
+      return matchSummaries.find((item) => item.id === activeMatchId)?.title || datedMatchTitle(match);
+    }
+
+    function storePendingSync(matchId, title, matchData) {
+      if (!matchId || !matchData) return;
+      localStorage.setItem(pendingKey(matchId), JSON.stringify({
+        id: matchId,
+        title: title || datedMatchTitle(matchData),
+        matchData,
+        complete: Boolean(matchData.complete),
+        updatedAt: new Date().toISOString()
+      }));
+    }
+
+    function readPendingSync(matchId) {
+      const raw = localStorage.getItem(pendingKey(matchId));
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        localStorage.removeItem(pendingKey(matchId));
+        return null;
+      }
+    }
+
+    function pendingSummaries() {
+      const summaries = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key || !key.startsWith(PENDING_SYNC_KEY_PREFIX)) continue;
+        const pending = readPendingSync(key.slice(PENDING_SYNC_KEY_PREFIX.length));
+        if (pending) {
+          summaries.push({
+            id: pending.id,
+            title: pending.title,
+            complete: Boolean(pending.complete),
+            updated_at: pending.updatedAt,
+            pending: true
+          });
+        }
+      }
+      return summaries;
+    }
+
+    function renderMatchOptions() {
+      if (!matchSummaries.length) {
+        els.matchSelect.innerHTML = `<option value="">No saved matches yet</option>`;
+        els.loadMatchBtn.disabled = true;
+        return;
+      }
+      els.loadMatchBtn.disabled = false;
+      els.matchSelect.innerHTML = matchSummaries.map((item) => {
+        const label = `${item.title}${item.pending ? " (pending sync)" : ""}${item.complete ? " (final)" : ""}`;
+        return `<option value="${escapeHtml(item.id)}" ${item.id === activeMatchId ? "selected" : ""}>${escapeHtml(label)}</option>`;
+      }).join("");
+    }
+
+    function upsertPendingSummary(matchId, title, matchData) {
+      const summary = {
+        id: matchId,
+        title: title || datedMatchTitle(matchData),
+        complete: Boolean(matchData.complete),
+        updated_at: new Date().toISOString(),
+        pending: true
+      };
+      matchSummaries = [
+        summary,
+        ...matchSummaries.filter((item) => item.id !== matchId)
+      ];
+      renderMatchOptions();
+    }
+
+    function upsertSavedSummary(matchId, title, matchData) {
+      const summary = {
+        id: matchId,
+        title: title || datedMatchTitle(matchData),
+        complete: Boolean(matchData.complete),
+        updated_at: new Date().toISOString(),
+        pending: false
+      };
+      matchSummaries = [
+        summary,
+        ...matchSummaries.filter((item) => item.id !== matchId)
+      ];
+      renderMatchOptions();
+    }
+
+    async function listMatches() {
+      let rows = [];
+      const client = getSupabaseClient();
+      if (client) {
+        const { data, error } = await client
+          .from(MATCHES_TABLE)
+          .select("id,title,complete,updated_at")
+          .order("updated_at", { ascending: false });
+        if (error) throw error;
+        rows = data || [];
+      }
+
+      const byId = new Map(rows.map((item) => [item.id, { ...item, pending: false }]));
+      pendingSummaries().forEach((item) => byId.set(item.id, item));
+      matchSummaries = Array.from(byId.values()).sort((a, b) => (
+        new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
+      ));
+      renderMatchOptions();
+      return matchSummaries;
+    }
+
+    async function refreshMatches(options = {}) {
+      if (!isSupabaseConfigured()) {
+        matchSummaries = pendingSummaries();
+        renderMatchOptions();
+        setSyncStatus(matchSummaries.length ? "Offline changes pending" : "Add Supabase config", matchSummaries.length ? "pending" : "error");
+        return;
+      }
+      try {
+        if (options.showStatus) setSyncStatus("Loading matches...", "saving");
+        await listMatches();
+        if (options.showStatus) setSyncStatus("Saved", "saved");
+      } catch (error) {
+        matchSummaries = pendingSummaries();
+        renderMatchOptions();
+        logSyncError("Could not list Supabase matches", error);
+        setSyncStatus(syncErrorMessage(error), "error");
+      }
+    }
+
+    async function saveMatch(matchId, matchData, title = currentMatchTitle()) {
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Supabase is not configured.");
+      const payload = {
+        id: matchId,
+        title: title || datedMatchTitle(matchData),
+        match_data: matchData,
+        complete: Boolean(matchData.complete),
+        updated_at: new Date().toISOString()
+      };
+      const { error } = await client.from(MATCHES_TABLE).upsert(payload, { onConflict: "id" });
+      if (error) throw error;
+      localStorage.removeItem(pendingKey(matchId));
+      upsertSavedSummary(matchId, payload.title, matchData);
+      return payload;
+    }
+
+    async function createMatch(matchData) {
+      const matchId = crypto.randomUUID();
+      const title = datedMatchTitle(matchData);
+      activeMatchId = matchId;
+      localStorage.setItem(ACTIVE_MATCH_ID_KEY, matchId);
+      try {
+        setSyncStatus("Saving...", "saving");
+        await saveMatch(matchId, matchData, title);
+        setSyncStatus("Saved", "saved");
+      } catch (error) {
+        logSyncError("Could not create Supabase match", error);
+        if (error?.code === "PGRST205") {
+          setSyncStatus(syncErrorMessage(error), "error");
+          toast("Create the Supabase matches table first.");
+        } else {
+          storePendingSync(matchId, title, matchData);
+          upsertPendingSummary(matchId, title, matchData);
+          setSyncStatus("Offline changes pending", "pending");
+        }
+      }
+      await refreshMatches();
+      return matchId;
+    }
+
+    async function loadMatch(matchId) {
+      if (!matchId) return;
+      const pending = readPendingSync(matchId);
+      if (pending) {
+        activeMatchId = matchId;
+        localStorage.setItem(ACTIVE_MATCH_ID_KEY, matchId);
+        match = pending.matchData;
+        render();
+        setSyncStatus("Offline changes pending", "pending");
+        return;
+      }
+
+      const client = getSupabaseClient();
+      if (!client) {
+        setSyncStatus("Add Supabase config", "error");
+        return;
+      }
+
+      setSyncStatus("Loading match...", "saving");
+      const { data, error } = await client
+        .from(MATCHES_TABLE)
+        .select("id,title,match_data")
+        .eq("id", matchId)
+        .single();
+      if (error) {
+        logSyncError("Could not load Supabase match", error);
+        setSyncStatus(syncErrorMessage(error), "error");
+        toast(error.code === "PGRST205" ? "Create the Supabase matches table first." : "Could not load that match.");
+        return;
+      }
+      activeMatchId = data.id;
+      localStorage.setItem(ACTIVE_MATCH_ID_KEY, activeMatchId);
+      match = data.match_data;
+      render();
+      setSyncStatus("Saved", "saved");
+    }
+
+    async function loadSelectedMatch() {
+      await loadMatch(els.matchSelect.value);
+    }
+
+    async function deleteOrArchiveMatch(matchId) {
+      if (matchId && matchId === activeMatchId) {
+        activeMatchId = "";
+        localStorage.removeItem(ACTIVE_MATCH_ID_KEY);
+      }
+      match = null;
+      render();
+      await refreshMatches();
+    }
+
+    async function flushPendingSync() {
+      if (!isSupabaseConfigured()) return;
+      const pending = pendingSummaries();
+      if (!pending.length) return;
+      setSyncStatus("Saving...", "saving");
+      for (const item of pending) {
+        const snapshot = readPendingSync(item.id);
+        if (!snapshot) continue;
+        try {
+          await saveMatch(snapshot.id, snapshot.matchData, snapshot.title);
+        } catch (error) {
+          logSyncError("Could not flush pending Supabase match", error);
+          setSyncStatus(error?.code === "PGRST205" ? syncErrorMessage(error) : "Offline changes pending", error?.code === "PGRST205" ? "error" : "pending");
+          return;
+        }
+      }
+      await refreshMatches();
+      setSyncStatus("Saved", "saved");
+    }
+
+    function save() {
+      if (!match || !activeMatchId) return;
+      const version = ++saveVersion;
+      window.clearTimeout(saveTimer);
+      setSyncStatus("Saving...", "saving");
+      saveTimer = window.setTimeout(async () => {
+        if (version !== saveVersion) return;
+        try {
+          await saveMatch(activeMatchId, match, currentMatchTitle());
+          if (version === saveVersion) setSyncStatus("Saved", "saved");
+        } catch (error) {
+          logSyncError("Could not save Supabase match", error);
+          if (error?.code === "PGRST205") {
+            setSyncStatus(syncErrorMessage(error), "error");
+            toast("Create the Supabase matches table first.");
+            return;
+          }
+          const title = currentMatchTitle();
+          storePendingSync(activeMatchId, title, match);
+          upsertPendingSummary(activeMatchId, title, match);
+          setSyncStatus("Offline changes pending", "pending");
+        }
+      }, 250);
     }
 
     function parseRoster(text, prefix) {
@@ -1706,11 +2148,11 @@ Adam Hayes</textarea>
       };
     }
 
-    function startMatch() {
+    async function startMatch() {
       const nextMatch = buildMatch();
       if (!nextMatch) return;
       match = nextMatch;
-      save();
+      await createMatch(match);
       render();
       toast("Match started.");
     }
@@ -2018,10 +2460,9 @@ Adam Hayes</textarea>
       renderBatters(sim);
       renderBowler(sim);
       renderScoreControls(sim);
-      renderTables(sim);
+      renderScorecard();
       renderLog(sim);
       renderOverview();
-      save();
     }
 
     function renderScore(sim) {
@@ -2099,8 +2540,16 @@ Adam Hayes</textarea>
       });
     }
 
-    function renderTables(sim) {
-      els.battingTable.innerHTML = sim.batting.map((player) => {
+    function allInningsSimulations() {
+      return match.innings.map((innings, index) => simulateInnings(innings, index + 1));
+    }
+
+    function inningsLabelText(sim) {
+      return `Innings ${sim.inningsNumber}: ${teamName(sim.innings.battingTeam)} ${sim.total}/${sim.wickets} (${oversFromBalls(sim.legalBalls)})`;
+    }
+
+    function battingRows(sim) {
+      return sim.batting.map((player) => {
         const stats = sim.batStats[player.id];
         const sr = stats.balls ? (stats.runs / stats.balls) * 100 : 0;
         return `<tr>
@@ -2113,8 +2562,10 @@ Adam Hayes</textarea>
           <td>${escapeHtml(stats.dismissal)}</td>
         </tr>`;
       }).join("");
+    }
 
-      els.bowlingTable.innerHTML = sim.bowling.map((player) => {
+    function bowlingRows(sim) {
+      return sim.bowling.map((player) => {
         const stats = sim.bowlStats[player.id];
         const economy = stats.balls ? stats.runs / (stats.balls / 6) : 0;
         return `<tr>
@@ -2127,6 +2578,19 @@ Adam Hayes</textarea>
           <td>${stats.balls ? formatRate(economy) : "-"}</td>
         </tr>`;
       }).join("");
+    }
+
+    function renderScorecard() {
+      const sims = allInningsSimulations();
+      selectedScorecardInnings = Math.min(Math.max(0, selectedScorecardInnings), sims.length - 1);
+      const sim = sims[selectedScorecardInnings];
+      els.scorecardInningsSelect.innerHTML = sims.map((item, index) => (
+        `<option value="${index}" ${index === selectedScorecardInnings ? "selected" : ""}>${escapeHtml(inningsLabelText(item))}</option>`
+      )).join("");
+      els.scorecardBattingTitle.textContent = `${teamName(sim.innings.battingTeam)} Batting`;
+      els.scorecardBowlingTitle.textContent = `${teamName(sim.innings.bowlingTeam)} Bowling`;
+      els.battingTable.innerHTML = battingRows(sim);
+      els.bowlingTable.innerHTML = bowlingRows(sim);
     }
 
     function renderLog(sim) {
@@ -2174,10 +2638,9 @@ Adam Hayes</textarea>
       return { text: String(event.runsBat), className: "" };
     }
 
-    function renderOverview() {
-      const sims = match.innings.map((innings, index) => simulateInnings(innings, index + 1));
+    function overviewCards(sims) {
       const result = getResult(sims);
-      els.matchOverview.innerHTML = sims.map((sim, index) => {
+      return sims.map((sim, index) => {
         const batting = teamName(sim.innings.battingTeam);
         const topBatter = bestBatter(sim);
         const topBowler = bestBowler(sim);
@@ -2192,6 +2655,10 @@ Adam Hayes</textarea>
       }).join("");
     }
 
+    function renderOverview() {
+      els.matchOverview.innerHTML = overviewCards(allInningsSimulations());
+    }
+
     function bestBatter(sim) {
       const best = Object.values(sim.batStats).sort((a, b) => b.runs - a.runs || b.balls - a.balls)[0];
       if (!best) return "-";
@@ -2204,6 +2671,74 @@ Adam Hayes</textarea>
         .sort((a, b) => b.wickets - a.wickets || a.runs - b.runs || b.balls - a.balls)[0];
       if (!best) return "-";
       return `${best.name} ${best.wickets}/${best.runs} (${oversFromBalls(best.balls)})`;
+    }
+
+    function printablePage(title, body) {
+      const popup = window.open("", "_blank");
+      if (!popup) {
+        toast("Allow pop-ups to print.");
+        return;
+      }
+      popup.opener = null;
+      popup.document.write(`<!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <title>${escapeHtml(title)}</title>
+          <style>
+            body { color: #111; font-family: Arial, sans-serif; margin: 24px; }
+            h1, h2, h3, p { margin: 0; }
+            h1 { font-size: 24px; margin-bottom: 6px; }
+            h2 { font-size: 18px; margin: 22px 0 8px; }
+            h3 { font-size: 14px; margin-bottom: 6px; text-transform: uppercase; }
+            .muted { color: #555; margin-bottom: 18px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+            th, td { border: 1px solid #bbb; padding: 7px; text-align: left; font-size: 12px; }
+            th { background: #f0f0f0; }
+            .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+            .summary-card { border: 1px solid #bbb; padding: 10px; }
+            .summary-card p { margin-top: 5px; font-size: 13px; }
+            @media print {
+              body { margin: 12mm; }
+              .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+          </style>
+        </head>
+        <body>${body}</body>
+        </html>`);
+      popup.document.close();
+      popup.focus();
+      popup.print();
+    }
+
+    function printSelectedInnings() {
+      if (!match) return;
+      const sim = allInningsSimulations()[selectedScorecardInnings];
+      const title = `${matchTitle(match)} - ${inningsLabelText(sim)}`;
+      printablePage(title, `
+        <h1>${escapeHtml(matchTitle(match))}</h1>
+        <p class="muted">${escapeHtml(inningsLabelText(sim))}</p>
+        <h2>${escapeHtml(teamName(sim.innings.battingTeam))} Batting</h2>
+        <table>
+          <thead><tr><th>Batter</th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th><th>Status</th></tr></thead>
+          <tbody>${battingRows(sim)}</tbody>
+        </table>
+        <h2>${escapeHtml(teamName(sim.innings.bowlingTeam))} Bowling</h2>
+        <table>
+          <thead><tr><th>Bowler</th><th>O</th><th>R</th><th>W</th><th>Wd</th><th>Nb</th><th>Econ</th></tr></thead>
+          <tbody>${bowlingRows(sim)}</tbody>
+        </table>
+      `);
+    }
+
+    function printMatchOverview() {
+      if (!match) return;
+      const title = `${matchTitle(match)} - Match Overview`;
+      printablePage(title, `
+        <h1>${escapeHtml(matchTitle(match))}</h1>
+        <p class="muted">Match Overview</p>
+        <div class="summary-grid">${overviewCards(allInningsSimulations())}</div>
+      `);
     }
 
     function getResult(sims) {
@@ -2231,11 +2766,6 @@ Adam Hayes</textarea>
       return { winnerTeam: null, text: `${needed} needed from ${Math.max(0, match.overs * 6 - second.legalBalls)} balls` };
     }
 
-    function save() {
-      if (!match) return;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(match));
-    }
-
     function applyTheme(theme) {
       const nextTheme = theme === "light" ? "light" : "dark";
       document.documentElement.dataset.theme = nextTheme;
@@ -2253,23 +2783,23 @@ Adam Hayes</textarea>
       applyTheme(current === "light" ? "dark" : "light");
     }
 
-    function loadSaved() {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      try {
-        match = JSON.parse(raw);
-        render();
-        toast("Saved match restored.");
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
+    async function restoreActiveMatch() {
+      await flushPendingSync();
+      await refreshMatches();
+      if (activeMatchId) {
+        await loadMatch(activeMatchId);
+        if (match) {
+          toast("Saved match restored.");
+          return;
+        }
       }
+      render();
     }
 
-    function resetMatch() {
-      if (!confirm("Start a new match and clear the saved scorecard?")) return;
-      match = null;
-      localStorage.removeItem(STORAGE_KEY);
-      render();
+    async function resetMatch() {
+      if (!confirm("Clear the current screen and return to match setup? Saved Supabase matches will stay available.")) return;
+      await deleteOrArchiveMatch(activeMatchId);
+      setSyncStatus("Saved", "saved");
       toast("Ready for a new match.");
     }
 
@@ -2299,15 +2829,27 @@ Adam Hayes</textarea>
     }
 
     els.startMatchBtn.addEventListener("click", startMatch);
+    els.loadMatchBtn.addEventListener("click", loadSelectedMatch);
+    els.refreshMatchesBtn.addEventListener("click", () => refreshMatches({ showStatus: true }));
     els.loadDemoBtn.addEventListener("click", loadDemo);
     els.resetBtn.addEventListener("click", resetMatch);
     els.saveSnapshotBtn.addEventListener("click", () => {
       save();
-      toast("Saved locally in this browser.");
+      toast(activeMatchId ? "Save queued for Supabase." : "Start or load a match first.");
     });
     els.themeToggleBtn.addEventListener("click", toggleTheme);
-    els.scorecardBtn.addEventListener("click", () => els.scorecardDialog.showModal());
+    els.scorecardBtn.addEventListener("click", () => {
+      selectedScorecardInnings = match ? match.currentInnings : 0;
+      renderScorecard();
+      els.scorecardDialog.showModal();
+    });
     els.closeScorecardBtn.addEventListener("click", () => els.scorecardDialog.close());
+    els.scorecardInningsSelect.addEventListener("change", () => {
+      selectedScorecardInnings = safeNumber(els.scorecardInningsSelect.value);
+      renderScorecard();
+    });
+    els.printInningsBtn.addEventListener("click", printSelectedInnings);
+    els.printOverviewBtn.addEventListener("click", printMatchOverview);
     els.swapStrikeBtn.addEventListener("click", swapStrike);
     els.changeBowlerBtn.addEventListener("click", changeBowler);
     els.recordBallBtn.addEventListener("click", () => recordBall(safeNumber(els.manualRuns.value)));
@@ -2327,9 +2869,10 @@ Adam Hayes</textarea>
       }
     });
 
+    window.addEventListener("online", flushPendingSync);
+
     applyTheme(localStorage.getItem(THEME_KEY) || "dark");
-    loadSaved();
-    render();
+    restoreActiveMatch();
   </script>
 </body>
 </html>
