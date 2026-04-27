@@ -1994,7 +1994,7 @@ Adam Hayes</textarea>
       try {
         if (options.showStatus) setSyncStatus("Loading matches...", "saving");
         await listMatches();
-        if (options.showStatus) setSyncStatus("Saved", "saved");
+        if (options.showStatus || els.syncStatus.textContent === "Connecting...") setSyncStatus("Saved", "saved");
       } catch (error) {
         matchSummaries = pendingSummaries();
         renderMatchOptions();
@@ -3122,13 +3122,16 @@ Adam Hayes</textarea>
     async function restoreActiveMatch() {
       await flushPendingSync();
       await refreshMatches();
-      if (activeMatchId) {
-        await loadMatch(activeMatchId);
+      const fallbackMatchId = matchSummaries[0]?.id || "";
+      const matchIdToLoad = activeMatchId || fallbackMatchId;
+      if (matchIdToLoad) {
+        await loadMatch(matchIdToLoad);
         if (match) {
           toast("Saved match restored.");
           return;
         }
       }
+      setSyncStatus(matchSummaries.length ? "Saved" : "No saved matches", matchSummaries.length ? "saved" : "idle");
       render();
     }
 
