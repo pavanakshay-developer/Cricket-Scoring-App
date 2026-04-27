@@ -1,6 +1,6 @@
-# Cricket Scoring App
+# PitchScore
 
-A professional single-file HTML5/JavaScript cricket scoring app for T20 match scoring with Supabase-backed save/load. It is designed for phone-first use on the boundary, while still working well on desktop browsers.
+PitchScore is a professional single-file HTML5/JavaScript cricket scoring app for T20 match scoring with Supabase-backed save/load. It is designed for phone-first use on the boundary, while still working well on desktop browsers.
 
 ## Supabase Setup
 
@@ -166,7 +166,7 @@ Then open `index.html` in a browser.
 ```powershell
 git status
 git add index.html README.md
-git commit -m "feat: update cricket scoring app"
+git commit -m "feat: update PitchScore"
 git push
 ```
 
@@ -176,6 +176,7 @@ git push
 .
 |-- .github/
 |-- index.html
+|-- PitchScore_Logo.png
 `-- README.md
 ```
 
